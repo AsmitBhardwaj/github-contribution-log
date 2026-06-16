@@ -3,7 +3,7 @@
 **Contribution Number:** 1 
 **Student:** Asmit Bhardwaj 
 **Issue:** https://github.com/apache/hamilton/issues/54  
-**Status:** Phase I
+**Status:** Phase II
 
 ---
 
@@ -38,18 +38,20 @@ Hamilton's core driver (driver.py) and the test suite.
 
 ### Environment Setup
 
-[Notes on setting up your local development environment - challenges you faced, how you solved them]
+I cloned the fork locally using git clone. Installed the dependencies using pip3 install -e [dev]. There was no major errors.
 
 ### Steps to Reproduce
 
-1. [Step 1]
-2. [Step 2]
-3. [Observed result]
+1. Clone the Apache Hamilton Repository
+2. Navigate to the test/ directory
+3. Search for any test file referencing thread safety or concurrent execution(grep -r "thread" tests/)
+4. Observe that no thread safety test exists for the driver
+5. Observed result: The driver has no test verifying parallel execution with different inputs return correct, non contaminated results
 
 ### Reproduction Evidence
 
-- **Commit showing reproduction:** [Link to commit in your fork]
-- **Screenshots/logs:** [If applicable]
+- **Commit showing reproduction:** https://github.com/AsmitBhardwaj/hamilton/tree/test/thread-safety-driver
+- **Screenshots/logs:** 
 - **My findings:** [What you discovered during reproduction]
 
 ---
@@ -66,24 +68,25 @@ Write a pytest test that creates a single driver instance, launches multiple thr
 
 ### Implementation Plan
 
-Using UMPIRE framework (adapted):
-
-**Understand:** The driver should handle parallel executions without threads interfering with each other
-
-**Match:** Look at existing driver tests in the Hamilton test suite for patterns to follow
+**Understand:** The driver has no test proving it handles concurrent executions safely. Multiple threads sharing one Driver instance could get wrong results if internal state is mutated mid execution.
 
 
-**Plan:** [Step-by-step implementation plan]
-1. Identify a simple Hamilton graph to use as the test target
-2. Create a driver instance from that graph
-3. Use Python's threading module to spawn multiple threads, each calling driver.execute() with different inputs
-4. Collect results and assert each thread got the correct output
+**Match:** Followed patterns in tests/test_hamilton_driver.py using Driver and tests.resources.very_simple_dag as test graph
 
-**Implement:** [Link to your branch/commits as you work]
 
-**Review:** Follow Hamilton's pre-commit hooks and style guidelines
+**Plan:**
+1. USe very_simple_dag
+2. Instantiate a single Driver from that graph
+3. Spawn 10 threads each calling driver.execute() with a unique integer input value(0-9)
+4. Collect results in a shared dictionary keyed by input value
+5. Assert no threads raised errors
+6. Assert every thread received the correct output for its own input
 
-**Evaluate:** Test passes consistently across multiple runs with no race conditions
+**Implement:** https://github.com/AsmitBhardwaj/hamilton/tree/test/thread-safety-driver
+
+**Review:** Will follow Hamilton's pre-commit hooks and style guidelines before commiting PR
+
+**Evaluate:** Test passes consistently across multiple runs and confirmed 1 passed with no race conditions
 
 ---
 
