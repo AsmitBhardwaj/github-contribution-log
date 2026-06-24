@@ -94,9 +94,7 @@ Write a pytest test that creates a single driver instance, launches multiple thr
 
 ### Unit Tests
 
-- [ ] Test case 1: [Description]
-- [ ] Test case 2: [Description]
-- [ ] Test case 3: [Description]
+- test_driver_thread_safety(): Spawns 10 threads sharing one Driver instance, each with unique input values (0–9), asserts every thread gets correct non-contaminated output
 
 ### Integration Tests
 
@@ -105,7 +103,7 @@ Write a pytest test that creates a single driver instance, launches multiple thr
 
 ### Manual Testing
 
-[What you tested manually and results]
+- Ran pytest locally: 1 passed in 0.73s across multiple runs with no race conditions
 
 ---
 
@@ -115,15 +113,17 @@ Write a pytest test that creates a single driver instance, launches multiple thr
 
 elected issue, passed all 6 checklist criteria, confirmed repository is actively maintained with 11 PRs merged in the past week. Posted comment on GitHub issue expressing interest.
 
-### Week [Y] Progress
+### Week [2] Progress
+
+Wrote test_driver_thread_safety() in tests/test_hamilton_driver.py. Used very_simple_dag as the test graph. Debugged a pandas Series assertion issue — fixed by using .item() to extract scalar value. Ran pytest and confirmed 1 passed in 0.73s.
 
 [Continue documenting as you work]
 
 ### Code Changes
 
-- **Files modified:** [List]
-- **Key commits:** [Links to important commits]
-- **Approach decisions:** [Why you chose certain approaches]
+- **Files modified:** tests/test_hamilton_driver.py
+- **Key commits:** https://github.com/AsmitBhardwaj/hamilton/tree/test/thread-safety-driver
+- **Approach decisions:** Modeled test structure on existing tests in test_hamilton_driver.py. Used threading.Thread to simulate concurrent driver execution.
 
 ---
 
@@ -143,22 +143,19 @@ elected issue, passed all 6 checklist criteria, confirmed repository is actively
 
 ## Learnings & Reflections
 
-### Technical Skills Gained
+### Technical Skills Gained: Thread safety testing in Python, using threading.Thread, debugging pandas Series scalar extraction with .item()
 
 [What you learned technically]
 
-### Challenges Overcome
+### Challenges Overcome: pandas assertion error where comparing a Series to an int failed — solved by calling .item() to extract the scalar
 
 [What was hard and how you solved it]
 
-### What I'd Do Differently Next Time
+### What I'd Do Differently Next Time :  Set up the pre-commit hooks earlier to ensure style compliance from the start
 
 [Reflection on your process]
 
 ---
 
-## Resources Used
+## Resources Used : tests/test_hamilton_driver.py (existing test patterns), Python threading docs
 
-- [Link to helpful documentation]
-- [Tutorial or Stack Overflow post that helped]
-- [GitHub issues or discussions that helped]
