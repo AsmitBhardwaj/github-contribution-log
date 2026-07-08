@@ -1,3 +1,86 @@
+# Contribution 2: Implement String Expression Parity with PySpark (`btrim` & `char`)
+
+**Contribution Number:** 2  
+**Student:** Asmit Bhardwaj  
+**Issue:** [Eventual-Inc/Daft#3792](https://github.com/Eventual-Inc/Daft/issues/3792)  
+**Status:** Phase I Complete
+
+---
+
+## Why I Chose This Issue
+
+I chose this issue because it aligns perfectly with my current learning goals of diving deeper into systems-level programming and gaining hands-on experience with Rust. Daft's push for high-performance dataframes relies heavily on an optimized Rust backend, and implementing PySpark string parity allows me to work directly with Rust's powerful string manipulation and arrow array memory management. 
+
+Instead of jumping into a massive architectural overhaul, focusing on discrete expressions like `btrim` (both trim) and `char` (ASCII to character casting) gives me a highly defined, bounded scope. This allows me to focus entirely on learning the codebase conventions, navigating how the Python API binds to the underlying Rust kernels (likely via PyO3), and practicing writing robust, idiomatic Rust code in a production-grade framework.
+
+---
+
+## Understanding the Issue
+
+### Problem Description
+
+Daft is building out full feature parity with PySpark to make it a drop-in replacement for distributed dataframe workloads. Currently, several string expressions available in PySpark are missing from Daft's expression engine. Specifically, the `btrim` function (which trims specified characters or spaces from both ends of a string) and the `char` function (which converts an integer ASCII/Unicode code point into its matching string character) need to be natively implemented in the Rust backend and exposed to the Python frontend.
+
+### Expected Behavior
+
+- **`btrim(column, [characters])`**: Should return a new string column with leading and trailing characters removed. If no character set is provided, it should default to stripping whitespace.
+- **`char(column)`**: Should take an integer column representing ASCII/Unicode values and return a string column containing the corresponding single-character strings.
+- Both functions should seamlessly handle `null` values within data arrays without panicking.
+
+### Current Behavior
+
+Attempting to invoke these specific string expressions on a Daft DataFrame throws an `AttributeError` or an unimplemented error because the expressions do not yet exist in the Python expression API or the core Rust execution kernels.
+
+### Affected Components
+
+- **Python Frontend (`daft/expressions/`)**: The user-facing API surface needs to be updated to accept these new string methods.
+- **Rust Backend (`src/daft-core/src/series/` / `src/daft-dsl/`)**: The logical expression registry needs to recognize the new expression types.
+- **Rust Kernels (`src/daft-core/src/array/ops/`)**: The actual data-parallel loops that execute the string manipulations across the Arrow arrays need to be written.
+
+---
+
+## Solution Approach
+
+### Analysis
+
+The root cause is simply that these capabilities haven't been ported over yet. Because Daft is built on top of Apache Arrow, the strings are stored in contiguous memory arrays. The implementation will require writing vectorized operations in Rust that efficiently map over these string/integer arrays.
+
+### Proposed Solution
+
+I will implement vectorized Rust functions for both behaviors utilizing Rust's native string optimization methods (such as `.trim_matches()` or standard character casting closures). I'll register these functions as valid operations within Daft's Domain Specific Language (`DSL`) and expose them via the Python abstraction layer.
+
+### Implementation Plan
+
+Using UMPIRE framework (adapted):
+
+**Understand:** Replicate PySpark's `btrim` and `char` functions cleanly in Daft's Rust layer while matching existing API ergonomics.
+
+**Match:** I will look at recent commits and pull requests in the repository that implemented other string parity functions (such as `overlay` or basic string slicing) to serve as a direct structural blueprint for array layout, macro usage, and PyO3 bindings.
+
+**Plan:**
+1. Locate the core string array operations module in Rust (`src/daft-core`).
+2. Implement the core logic kernel for `char` using safe casting (`char::from_u32`) and array mapping.
+3. Implement the core logic kernel for `btrim` using optimized string trimming iterators.
+4. Expose the new kernels through the DSL kernel registry.
+5. Add the corresponding Python methods to the Expression class so users can invoke them.
+6. Write comprehensive unit tests in Python (`tests/`) ensuring proper execution, edge-case validation, and correct null-value propagation.
+
+**Implement:** [In Progress - Will link branch/commits here in Phase II]
+
+**Review:** [Pending]
+
+**Evaluate:** [Pending]
+
+---
+
+## Resources Used
+
+- [Daft Contributor Documentation](https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md)
+- [PySpark String Functions Reference Doc](https://spark.apache.org/docs/latest/api/sql/index.html)
+
+
+**ARCHIVE/PAST CONTRIBUTIONS**
+
 # Contribution 1: Add Testing for Thread Safety of Driver
 
 **Contribution Number:** 1 
