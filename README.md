@@ -1,4 +1,4 @@
-# Contribution 2: Implement String Expression Parity with PySpark (btrim & char)
+# Contribution 3: Implement String Expression Parity with PySpark (btrim & char)
 
 **Student:** Asmit Bhardwaj
 **Issue:** [Eventual-Inc/Daft#3792](https://github.com/Eventual-Inc/Daft/issues/3792)
