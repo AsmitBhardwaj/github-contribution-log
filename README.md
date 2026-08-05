@@ -1,16 +1,17 @@
-# Contribution 3: Implement String Expression Parity with PySpark (btrim & char)
+# Contribution 3: Ability to Disable "Joined the Call" / "Ended the Call" Messages
 
 **Student:** Asmit Bhardwaj
-**Issue:** [Eventual-Inc/Daft#3792](https://github.com/Eventual-Inc/Daft/issues/3792)
+**Issue:** [SableClient/Sable#705](https://github.com/SableClient/Sable/issues/705)
+**Pull Request:** [SableClient/Sable#1641](https://github.com/SableClient/Sable/pull/1641)
 **Status:** Phase IV Complete (PR Submitted)
 
 ---
 
 ## 🎯 Why I Chose This Issue
 
-I chose this issue because it aligns directly with my goal of diving deeper into systems-level programming and gaining hands-on experience with Rust in a production environment. Daft's high-performance dataframe engine relies heavily on an optimized Rust backend, and implementing PySpark string parity allowed me to work directly with Rust's string manipulation primitives and Apache Arrow array memory management.
+I picked this issue after a build-environment detour on a different project (Apache Beam) made clear how much a heavy Java/Gradle toolchain slows down iteration when disk space and time are tight. Sable is a TypeScript/React Matrix chat client — a much lighter environment to set up and iterate in — and the issue itself was a well-scoped, self-contained UI/state problem rather than a deep architectural one, which made it a good fit for a focused contribution within the practicum timeline.
 
-Instead of taking on a massive architectural overhaul, focusing on discrete expressions like `btrim` (both trim) and `char` (ASCII/Unicode integer-to-character casting) provided a well-defined, bounded scope. This let me master the codebase conventions, navigate how the Python API binds to underlying Rust kernels via PyO3, and practice writing robust, idiomatic, vector-optimized Rust code within a production dataframe system.
+It was also a chance to work inside a real, actively maintained consumer-facing app (a fork of Cinny) and learn how a mid-sized React codebase organizes settings, state, and timeline rendering — patterns that generalize well beyond this one repo.
 
 ---
 
@@ -18,149 +19,74 @@ Instead of taking on a massive architectural overhaul, focusing on discrete expr
 
 ### Problem Description
 
-Daft is building out full feature parity with PySpark to serve as a drop-in replacement for distributed dataframe workloads. Several string expressions available in PySpark were missing from Daft's expression engine — specifically:
+Every time a user joins or leaves a voice/video call in a room, Sable posts a system message directly into the timeline: "X joined the call" / "X ended the call." In active rooms with frequent calls, these messages accumulate quickly and bury real conversation history. The original reporter included a screenshot showing their chat "washed away" by repeated call notifications, and requested a toggle (client-side or server-wide) to suppress them.
 
-- **`btrim`**: trims specified characters (or whitespace, by default) from both ends of a string.
-- **`char`**: converts an integer ASCII/Unicode code point into its matching string character.
+### Reproduction
 
-Both needed to be natively implemented in the Rust backend and exposed to the Python frontend.
+Set up a local Sable dev environment, logged in with a test Matrix account (matrix.org homeserver), created a test room ("Dodo"), joined from two ends, and started/ended a call multiple times. A roughly two-minute test session produced **nine separate** "joined the call" / "ended the call" timeline messages — a clean, dramatic reproduction of the reported problem.
 
-### Expected Behavior
+### Root Cause
 
-- `btrim(column, [characters])`: returns a new string column with leading and trailing characters removed. Defaults to stripping whitespace if no character set is provided.
-- `char(column)`: takes an integer column of ASCII/Unicode values and returns a string column of the corresponding single-character strings.
-- **Null handling**: both functions must propagate nulls through data arrays without panicking.
-
-### Current Behavior
-
-Invoking either expression on a Daft DataFrame threw an `AttributeError` — the methods simply didn't exist on the Python expression API, and there were no corresponding Rust execution kernels.
-
-### Affected Components
-
-- **Python frontend** (`daft/expressions/`): user-facing API surface needed new string methods under `.str`.
-- **Rust core DSL** (`src/daft-dsl/`): the logical expression registry needed to recognize the new expression types and wire up logical planning.
-- **Rust kernels** (`src/daft-core/src/array/ops/`): the actual data-parallel, vectorized execution loops operating on Apache Arrow arrays.
-
----
-
-## 🧪 Reproduction Process
-
-### Environment Setup
-
-```bash
-git clone https://github.com/AsmitBhardwaj/Daft.git
-cd Daft
-pip install -e .[dev]
-maturin develop
-```
-
-### Steps to Reproduce
-
-```python
-import daft
-from daft import col
-
-df = daft.from_pydict({"val": [" hello ", "world "]})
-df.select(col("val").str.btrim())
-```
-
-Result: `AttributeError: 'Expression' object has no attribute 'btrim'`
-
-### Reproduction Evidence
-
-Confirmed missing expression bindings in `daft/expressions/string.py` and missing kernel handlers in `daft-core`.
+These messages are rendered from `m.call.member`-style state events (Sable's `EventType.GroupCallMemberPrefix`). There was no setting gating whether these events render as timeline messages — every call state change unconditionally produced a visible line, unlike other event types (e.g. membership changes), which already had a `hideMembershipEvents` toggle.
 
 ---
 
 ## 🛠️ Solution Approach
 
-### Analysis
+The codebase already had an established pattern for exactly this kind of problem — `hideMembershipEvents`, a persisted boolean setting that gates whether `m.room.member` events render in the timeline. The fix was to add a parallel `hideCallEvents` setting and thread it through every layer that `hideMembershipEvents` already touches, rather than inventing a new mechanism.
 
-The root cause was simply that these expressions hadn't yet been ported to Daft's expression engine. Because Daft stores strings in contiguous Apache Arrow memory arrays (`Utf8Array` / `Int64Array`), the implementation required vectorized Rust operations that map efficiently over these arrays while handling null bitmasks without overhead or panics.
+### Files Changed
 
-### Proposed Solution
-
-1. Implement vectorized Rust functions for both operations using Rust's native string primitives (`.trim_matches()`, and safe `char::from_u32` casting).
-2. Register these functions in Daft's DSL and expose them to Python via PyO3 bindings on the `Expression` class.
-
----
-
-## 📋 Implementation Plan (UMPIRE Framework)
-
-- **Understand**: Replicate PySpark's exact semantics for `btrim` and `char` within Daft's Rust layer while matching existing API ergonomics.
-- **Match**: Reviewed recent commits/PRs implementing other string parity functions (`trim`, `substr`, `overlay`) as structural blueprints for array layouts, PyO3 bindings, and macro registrations.
-- **Plan**:
-  - Locate the core string array operations module in `src/daft-core/src/array/ops/`.
-  - Implement the `char` kernel using safe casting (`char::from_u32`) over the array.
-  - Implement the `btrim` kernel using optimized string-trimming iterators.
-  - Expose both kernels through the DSL kernel registry (`src/daft-dsl/`).
-  - Add `.btrim()` and `.char()` to the Python `Expression` string namespace.
-  - Write unit tests covering execution, edge cases, and null propagation.
-- **Implement**: Written, built, and tested locally.
-- **Review**: Verified clean builds with `cargo check`, passed `cargo test`, validated formatting with `ruff` and `cargo fmt`.
-- **Evaluate**: Verified PySpark behavioral parity and no performance regressions on large synthetic string series.
+- **`src/app/state/settings.ts`** — added `hideCallEvents: boolean` to the settings type and its default value (`false`, preserving existing behavior for users who don't opt in)
+- **`src/app/hooks/timeline/useTimelineRendererContext.ts`** — added `hideCallEvents` to the `TimelineRendererSettings` interface
+- **`src/app/hooks/timeline/useProcessedTimeline.ts`** — added `hideCallEvents` to `UseProcessedTimelineOptions`, threaded it through the destructure and `useCallback` dependency array, and added a filter check that excludes `GroupCallMemberPrefix` events from the processed timeline when the setting is on
+- **`src/app/hooks/timeline/useTimelineEventRenderer.tsx`** — added `hideCallEvents` to the renderer's settings type, destructured it, and added an early `return null` guard in the `GroupCallMemberPrefix` render handler
+- **`src/app/features/room/RoomTimeline.tsx`** — read the setting from state and passed it through to both `useProcessedTimeline` and `useTimelineEventRenderer`
+- **`src/app/features/settings/general/General.tsx`** — added a new `SettingToggle` control ("Hide Call Join/Leave Messages") using the repo's existing `useSetting` hook pattern
+- **`.changeset/fix-705-hide-call-events.md`** — added the changeset entry required by CI (this repo uses Knope, not Changesets, despite the similar workflow)
 
 ---
 
-## 🧪 Testing Strategy
-
-### Unit Tests
-
-Written in `tests/expressions/typing/test_str.py` and `tests/series/test_str.py`:
-
-- **`test_btrim()`**: standard whitespace trimming, custom character-set trimming (e.g., trimming `xyz` from `xyzhellozx`), empty strings, and arrays containing nulls.
-- **`test_char()`**: standard ASCII conversions (e.g., `65 -> 'A'`), Unicode code points, boundary/invalid integer values, and null propagation.
+## 🧪 Testing
 
 ### Manual Testing
 
-```bash
-pytest tests/expressions/typing/test_str.py
-pytest tests/series/test_str.py
-```
+1. Reproduced the bug (9 messages from a 2-minute test call), confirmed the environment and understanding of the problem.
+2. Enabled the new "Hide Call Join/Leave Messages" toggle in Settings → General → Messages.
+3. Started and ended a new call — confirmed **zero** new join/leave messages appeared in the timeline, while the call itself connected and disconnected normally.
+4. Disabled the toggle and repeated the call — confirmed messages reappeared, proving the setting is a live, reversible filter rather than a one-way suppression.
+5. Ran the project's lint/format checks before committing.
 
-Result: passed consistently across all runs.
+### Screenshots
+
+**Before (toggle off / default state):** call messages clutter the timeline (9 messages from one short call)
+**After (toggle on):** new calls produce no timeline messages; toggling back off restores them
+
+*(screenshots attached in PR #1641)*
 
 ---
 
-## 📝 Implementation Notes & Progress
+## 📝 Process Notes
 
-### Development Milestones
-
-- **Phase I**: Investigated Daft's expression engine architecture, PyO3 bindings, and Apache Arrow kernel layouts.
-- **Phase II**: Implemented `char` and `btrim` vectorized kernels in `daft-core`; exposed kernel methods through `daft-dsl` and registered PyO3 bindings for Python.
-- **Phase III**: Added user-facing Python API bindings under `col().str.btrim()` and `col().str.char()`; wrote full Python test coverage.
-- **Phase IV**: Ran all local test suites, linter checks (`cargo fmt`, `clippy`, `ruff`), and finalized the PR submission.
-
-### Code Changes
-
-- `src/daft-core/src/array/ops/utf8.rs` — kernel logic
-- `src/daft-dsl/src/expr/utf8.rs` — DSL expression definitions
-- `daft/expressions/string.py` — Python frontend bindings
-- `tests/series/test_str.py` — pytest coverage
+- Before starting work, I checked the issue thread and saw another contributor (`Aayush7788`) had expressed interest a couple of weeks prior. Since the issue remained formally unassigned and stale, I commented to check in before proceeding, then continued when there was no response, and disclosed this context transparently in the PR.
+- The PR's required `require-changeset` CI check initially failed because this repo uses **Knope** rather than the more common Changesets tool — resolved by reading `CONTRIBUTING.md`'s "Documenting a change" section and manually creating the correctly formatted `.changeset/*.md` file.
+- Followed the PR template's AI disclosure requirement honestly: checked "Partially AI assisted" and wrote the explanation of what was AI-assisted (locating relevant files, understanding the existing pattern) versus self-reviewed/understood (the actual edits and why each one is needed) in my own words, per the template's explicit instruction not to have AI generate that explanation.
 
 ---
 
 ## 💡 Learnings & Reflections
 
-### Technical Skills Gained
+- **Environment tradeoffs matter for scoping.** A heavier build system (Beam's Gradle/JVM stack) versus a lighter one (Sable's Vite/pnpm/TypeScript stack) meaningfully changes how much of a 10-week window is spent on setup versus actual contribution work.
+- **Following existing patterns beats inventing new ones.** Because `hideMembershipEvents` already existed and touched exactly the layers this fix needed (settings state, two timeline hooks, the settings UI), the actual code change was small and low-risk — the majority of the work was *locating* all the places that pattern touched, not designing something new.
+- **Package manager and tooling mismatches cost real time.** Early npm/pnpm and Node-version conflicts, plus a repo-specific release tool (Knope) masquerading under a generically-named CI check (`require-changeset`), were the biggest time sinks — worth checking `package.json`'s `packageManager` field and `CONTRIBUTING.md` early on any new repo before assuming defaults.
+- **Community etiquette in open source has judgment calls, not just rules.** Handling the "someone else expressed interest but never got a formal assignment or replied" situation required a judgment call (comment, wait briefly, proceed transparently) rather than a clear-cut rule.
 
-- Advanced Rust systems programming: low-level Apache Arrow memory layouts and null-bitmap handling.
-- Deeper understanding of PyO3 bindings connecting Rust core execution engines to user-facing Python DSLs.
-- Vectorized operations in Rust using iterators and safe character-casting closures.
+---
 
-### Challenges Overcome
+## ARCHIVE / PAST CONTRIBUTIONS
 
-Handling edge-case Unicode integer code points in `char`: a direct `as char` cast in Rust can produce undefined behavior or panics for out-of-range integers. Solved by using `char::from_u32` inside a safe mapping closure over the Arrow array, returning null or handling errors gracefully for invalid code points.
-
-### What I'd Do Differently Next Time
-
-Set up `maturin develop` and local Rust compilation caching (`sccache`) from day one to speed up rebuild times when iterating on kernel code.
-
-### Resources Used
-
-- Daft Contributor Guidelines & Architecture Docs
-- Apache Arrow Rust Crate Documentation (`arrow::array`)
-- PySpark `btrim` & `char` SQL Reference Documentation
+- Contribution 1 — Apache Beam #19097 (multi-join shuffle optimization) — in progress / paused
+- Contribution 2 — [Eventual-Inc/Daft#3792](https://github.com/Eventual-Inc/Daft/issues/3792) (btrim & char string expression parity) — Phase IV Complete
 
 ---
 
